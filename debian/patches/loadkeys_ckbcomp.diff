@@ -1,0 +1,66 @@
+Description: Extend loadkeys to allow using ckbcomp
+ Use ckbcomp to get the keyboard layout if other data files are not
+ available.
+Author: Colin Watson <cjwatson@ubuntu.com>
+Forwarded: no
+Last-Update: 2013-02-18
+
+Index: b/src/loadkeys.y
+===================================================================
+--- a/src/loadkeys.y
++++ b/src/loadkeys.y
+@@ -1213,8 +1213,52 @@
+ 			strcpy(pathname, "<stdin>");
+ 
+ 		} else if ((f = findfile(argv[i], dirpath, suffixes)) == NULL) {
+-			fprintf(stderr, _("cannot open file %s\n"), argv[i]);
+-			exit(EXIT_FAILURE);
++			/* Try ckbcomp, but only if the keymap name is sane. */
++			int j;
++
++			for (j = 0; argv[i][j]; j++)
++				if (!isalpha((unsigned char) argv[i][j]) &&
++				    !isdigit((unsigned char) argv[i][j]) &&
++				/* - and _ in variant names; / in a layout
++				 * name; : as separator */
++				    !strchr("-/_:", argv[i][j]))
++					break;
++
++			if (!argv[i][j]) {
++				char *layout, *variant;
++				char *colon;
++				size_t cmdsize;
++				char *cmd;
++
++				layout = strdup(argv[i]);
++				colon = strchr(layout, ':');
++				if (colon) {
++					*colon = '\0';
++					variant = strdup(colon + 1);
++				} else
++					variant = NULL;
++
++				cmdsize = sizeof("ckbcomp -model pc105 ") +
++					  strlen(layout);
++				if (variant) {
++					cmdsize += 1 + strlen(variant);
++					cmd = xmalloc(cmdsize);
++					sprintf(cmd, "ckbcomp -model pc105 %s %s",
++						layout, variant);
++				} else {
++					cmd = xmalloc(cmdsize);
++					sprintf(cmd, "ckbcomp -model pc105 %s",
++						layout);
++				}
++				f = popen(cmd, "r");
++				free(cmd);
++				free(variant);
++				free(layout);
++			} else {
++				fprintf(stderr, _("cannot open file %s\n"),
++					argv[i]);
++				exit(EXIT_FAILURE);
++			}
+ 		}
+ 
+ 		parse_keymap(f);
